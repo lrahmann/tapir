@@ -34,6 +34,22 @@ namespace solver {
 class StatePool;
 } /* namespace solver */
 
+
+template<size_t dimcount, typename T>
+struct ndvector
+{
+    typedef std::vector< typename ndvector<dimcount-1, T>::type > type;
+};
+
+template<typename T>
+struct ndvector<0,T>
+{
+    typedef T type;
+};
+
+
+
+
 /** A namespace to hold the various classes used for the Tag POMDP model. */
 namespace tag {
 class TagObervation;
@@ -108,7 +124,7 @@ class TagModel: public shared::ModelWithProgramOptions {
     /******************** Added by Josh **************************/
 
     /** Get 2D vector representing the current environment map */
-    inline const std::vector<std::vector<TagCellType>>& getEnvMap() {
+    inline const ndvector<3,TagCellType>::type & getEnvMap() {
         return envMap_;
     }
 
@@ -130,13 +146,13 @@ class TagModel: public shared::ModelWithProgramOptions {
      * This flag is mostly not used as there is no penalty for this in Tag, and the returned
      * position already reflects them staying still.
      */
-    std::pair<GridPosition, bool> getMovedPos(GridPosition const &position, ActionType action);
 
+    std::pair<GridPosition, bool> getMovedPos(const GridPosition &position, long timestep, ActionType action);
     /** Generates a new opponent position based on the current positions of the robot and the
      * opponent.
      */
     GridPosition sampleNextOpponentPosition(GridPosition const &robotPos,
-            GridPosition const &opponentPos);
+            GridPosition const &opponentPos, long const &t1);
 
     /* ---------- Custom getters for extra functionality  ---------- */
     /** Returns the number of rows in the map for this TagModel instance. */
@@ -162,7 +178,7 @@ class TagModel: public shared::ModelWithProgramOptions {
     }
 
     /** Returns the distance within the map between the two given positions. */
-    int getMapDistance(GridPosition p1, GridPosition p2);
+    int getMapDistance(GridPosition p1, GridPosition p2, long t1, long t2);
 
 
     /* --------------- The model interface proper ----------------- */
@@ -254,7 +270,7 @@ class TagModel: public shared::ModelWithProgramOptions {
 
   private:
     /** Calculates the distances from the given position to all other parts of the map. */
-    void calculateDistancesFrom(GridPosition position);
+    void calculateDistancesFrom(GridPosition position, long timestep);
     /** Calculates all pairwise distances on the map. */
     void calculatePairwiseDistances();
 
@@ -262,7 +278,7 @@ class TagModel: public shared::ModelWithProgramOptions {
     void initialize();
 
     /** Generates a random empty grid cell. */
-    GridPosition randomEmptyCell();
+    std::tuple<GridPosition, int> randomEmptyCell(long timeStep = -1);
 
     /** Generates a next state for the given state and action, as well as a boolean flag that will
      * be true if the action moved into a wall, and false otherwise.
@@ -292,12 +308,12 @@ class TagModel: public shared::ModelWithProgramOptions {
      * after the current state.
      */
     std::unordered_map<GridPosition, double> getNextOpponentPositionDistribution(
-            GridPosition const &robotPos, GridPosition const &opponentPos);
+            GridPosition const &robotPos, GridPosition const &opponentPos,long timestep);
 
     /** Returns true iff the given GridPosition represents a valid square that an agent could be
      * in - that is, the square must be empty, and within the bounds of the map.
      */
-    bool isValid(GridPosition const &pos);
+    bool isValid(GridPosition const &pos, long const &timeStep);
 
     /** The TagOptions instance associated with this model. */
     TagOptions *options_;
@@ -316,10 +332,14 @@ class TagModel: public shared::ModelWithProgramOptions {
     /** The number of columns in the map. */
     long nCols_;
 
+    long maxTime_;
+
+    long currentTime_;
     /** The environment map in text form. */
     std::vector<std::string> mapText_;
     /** The environment map in vector form. */
-    std::vector<std::vector<TagCellType>> envMap_;
+    /** last index is time*/
+    ndvector<3,TagCellType>::type envMap_;
 
     /** The number of possible actions in the Tag POMDP. */
     long nActions_;
@@ -328,7 +348,7 @@ class TagModel: public shared::ModelWithProgramOptions {
     std::unique_ptr<TagMdpSolver> mdpSolver_;
 
     /** The pairwise distances between each pair of cells in the map. */
-    std::vector<std::vector<std::vector<std::vector<int>>>> pairwiseDistances_;
+    ndvector<6,int>::type pairwiseDistances_;
 };
 } /* namespace tag */
 

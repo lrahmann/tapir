@@ -31,7 +31,7 @@ class TagState : public solver::VectorState {
     /** Constructs a new TagState with the given positions of the robot and opponent, and the
      * given tagged state.
      */
-    TagState(GridPosition robotPos, GridPosition opponentPos, bool _isTagged);
+    TagState(GridPosition robotPos, GridPosition opponentPos, bool _isTagged, int _timestep);
 
     virtual ~TagState() = default;
     /** A copy constructor, for convenience. */
@@ -52,6 +52,7 @@ class TagState : public solver::VectorState {
     std::vector<double> asVector() const override;
     void print(std::ostream &os) const override;
 
+    int getTimestep() const;
     /** Returns the position of the robot. */
     GridPosition getRobotPosition() const;
     /** Returns the position of the opponent. */
@@ -59,6 +60,7 @@ class TagState : public solver::VectorState {
     /** Returns true iff the opponent has already been tagged. */
     bool isTagged() const;
   private:
+    int timestep_;
     /** The position of the robot in the grid. */
     GridPosition robotPos_;
     /** The position of the opponent in the grid. */

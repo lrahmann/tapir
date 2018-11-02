@@ -113,41 +113,48 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
     }
 }
 
-int TagModel::getMapDistance(GridPosition p1, GridPosition p2) {
-    return pairwiseDistances_[p1.i][p1.j][p2.i][p2.j];
+int TagModel::getMapDistance(GridPosition p1, GridPosition p2,long t1 = 0 , long t2 = 0) {
+    return pairwiseDistances_[p1.i][p1.j][p2.i][p2.j][t1][t2];
 }
 
-void TagModel::calculateDistancesFrom(GridPosition position) {
-    auto &distanceGrid = pairwiseDistances_[position.i][position.j];
+void TagModel::calculateDistancesFrom(GridPosition position,long timestep = 0) {
+
+    auto &distanceGrid = pairwiseDistances_[position.i][position.j][timestep];
+
     // Fill the grid with "-1", for inaccessible cells.
     for (auto &row : distanceGrid) {
         for (auto &cell : row) {
-            cell = -1;
+            for(auto &cellV : cell){
+                cellV = -1;
+            }
         }
     }
-    if (envMap_[position.i][position.j] == TagCellType::WALL) {
+    if (envMap_[position.i][position.j][timestep] == TagCellType::WALL) {
         return;
     }
 
-    std::queue<GridPosition> queue;
+    std::queue<std::tuple<GridPosition,long>> queue;
     // Start at 0 for the current position.
-    distanceGrid[position.i][position.j] = 0;
-    queue.push(position);
+    distanceGrid[position.i][position.j][timestep] = 0;
+    queue.push(std::tie(position,timestep));
     while (!queue.empty()) {
-        GridPosition pos = queue.front();
+        GridPosition pos;
+        long timeStep;
+        std::tie(pos,timeStep) = queue.front();
         queue.pop();
-        int distance = distanceGrid[pos.i][pos.j] + 1;
+        int distance = distanceGrid[pos.i][pos.j][timeStep] + 1;
         for (ActionType direction : { ActionType::NORTH, ActionType::SOUTH, ActionType::WEST,
                 ActionType::EAST }) {
             GridPosition nextPos;
             bool isLegal;
-            std::tie(nextPos, isLegal) = getMovedPos(pos, direction);
+            std::tie(nextPos, isLegal) = getMovedPos(pos,timeStep, direction);
+            timeStep++;
             // If it's legal and it's an improvement it needs to be queued.
-            if (isLegal) {
-                int &nextPosDistance = distanceGrid[nextPos.i][nextPos.j];
+            if (isLegal && timeStep < maxTime_) {
+                int &nextPosDistance = distanceGrid[nextPos.i][nextPos.j][timeStep];
                 if (nextPosDistance == -1 || nextPosDistance > distance) {
                     nextPosDistance = distance;
-                    queue.push(nextPos);
+                    queue.push(std::tie(nextPos,timeStep));
                 }
             }
         }
@@ -155,9 +162,12 @@ void TagModel::calculateDistancesFrom(GridPosition position) {
 }
 
 void TagModel::calculatePairwiseDistances() {
-    for (int i = 0; i < nRows_; i++) {
-        for (int j = 0; j < nCols_; j++) {
-            calculateDistancesFrom(GridPosition(i, j));
+    for (long timeStep=0;timeStep<maxTime_;timeStep++) {
+
+        for (int i = 0; i < nRows_; i++) {
+            for (int j = 0; j < nCols_; j++) {
+                calculateDistancesFrom(GridPosition(i, j),timeStep);
+            }
         }
     }
 }
@@ -175,7 +185,7 @@ void TagModel::initialize() {
             } else {
                 cellType = TagCellType::EMPTY;
             }
-            envMap_[p.i][p.j] = cellType;
+            envMap_[p.i][p.j].resize(maxTime_,cellType);
         }
     }
 
@@ -193,18 +203,21 @@ void TagModel::initialize() {
     calculatePairwiseDistances();
 }
 
-GridPosition TagModel::randomEmptyCell() {
+std::tuple<GridPosition,int> TagModel::randomEmptyCell(long timeStep) {
     GridPosition pos;
     while (true) {
         pos.i = std::uniform_int_distribution<long>(0, nRows_ - 1)(
                 *getRandomGenerator());
         pos.j = std::uniform_int_distribution<long>(0, nCols_ - 1)(
                 *getRandomGenerator());
-        if (envMap_[pos.i][pos.j] == TagCellType::EMPTY) {
+        if (timeStep == -1) {
+            timeStep = std::uniform_int_distribution<long>(0, maxTime_ - 1)(*getRandomGenerator());
+        }
+        if (envMap_[pos.i][pos.j][timeStep] == TagCellType::EMPTY) {
             break;
         }
     }
-    return pos;
+    return std::tie(pos,timeStep);
 }
 
 
@@ -214,9 +227,11 @@ std::unique_ptr<solver::State> TagModel::sampleAnInitState() {
 }
 
 std::unique_ptr<solver::State> TagModel::sampleStateUninformed() {
-    GridPosition robotPos = randomEmptyCell();
-    GridPosition opponentPos = randomEmptyCell();
-    return std::make_unique<TagState>(robotPos, opponentPos, false);
+    GridPosition robotPos;
+    long timestep;
+    std::tie(robotPos,timestep)= randomEmptyCell();
+    GridPosition opponentPos = std::get<0>(randomEmptyCell(timestep));
+    return std::make_unique<TagState>(robotPos, opponentPos, false, timestep);
 }
 
 bool TagModel::isTerminal(solver::State const &state) {
@@ -225,7 +240,7 @@ bool TagModel::isTerminal(solver::State const &state) {
 
 bool TagModel::isValid(solver::State const &state) {
     TagState const tagState = static_cast<TagState const &>(state);
-    return isValid(tagState.getOpponentPosition()) && isValid(tagState.getRobotPosition());
+    return isValid(tagState.getOpponentPosition(),tagState.getTimestep()) && isValid(tagState.getRobotPosition(),tagState.getTimestep());
 }
 
 
@@ -244,14 +259,14 @@ std::pair<std::unique_ptr<TagState>, bool> TagModel::makeNextState(
     if (tagAction.getActionType() == ActionType::TAG
             && robotPos == opponentPos) {
         return std::make_pair(
-                std::make_unique<TagState>(robotPos, opponentPos, true), true);
+                std::make_unique<TagState>(robotPos, opponentPos, true,tagState.getTimestep()+1), true);
     }
 
-    GridPosition newOpponentPos = sampleNextOpponentPosition(robotPos, opponentPos);
+    GridPosition newOpponentPos = sampleNextOpponentPosition(robotPos, opponentPos,tagState.getTimestep());
     GridPosition newRobotPos;
     bool wasValid;
-    std::tie(newRobotPos, wasValid) = getMovedPos(robotPos, tagAction.getActionType());
-    return std::make_pair(std::make_unique<TagState>(newRobotPos, newOpponentPos, false),
+    std::tie(newRobotPos, wasValid) = getMovedPos(robotPos, tagState.getTimestep(),tagAction.getActionType());
+    return std::make_pair(std::make_unique<TagState>(newRobotPos, newOpponentPos, false,tagState.getTimestep()+1),
             wasValid);
 }
 
@@ -283,19 +298,19 @@ std::vector<ActionType> TagModel::makeOpponentActions(
 
 /** Generates a proper distribution for next opponent positions. */
 std::unordered_map<GridPosition, double> TagModel::getNextOpponentPositionDistribution(
-        GridPosition const &robotPos, GridPosition const &opponentPos) {
+        GridPosition const &robotPos, GridPosition const &opponentPos, long timeStep) {
     std::vector<ActionType> actions = makeOpponentActions(robotPos, opponentPos);
     std::unordered_map<GridPosition, double> distribution;
     double actionProb = (1 - opponentStayProbability_) / actions.size();
     for (ActionType action : actions) {
-        distribution[getMovedPos(opponentPos, action).first] += actionProb;
+        distribution[getMovedPos(opponentPos, timeStep,action).first] += actionProb;
     }
     distribution[opponentPos] += opponentStayProbability_;
     return std::move(distribution);
 }
 
 GridPosition TagModel::sampleNextOpponentPosition(GridPosition const &robotPos,
-        GridPosition const &opponentPos) {
+        GridPosition const &opponentPos, long const &timestep) {
     // Randomize to see if the opponent stays still.
     if (std::bernoulli_distribution(opponentStayProbability_)(
             *getRandomGenerator())) {
@@ -304,10 +319,10 @@ GridPosition TagModel::sampleNextOpponentPosition(GridPosition const &robotPos,
     std::vector<ActionType> actions(makeOpponentActions(robotPos, opponentPos));
     ActionType action = actions[std::uniform_int_distribution<long>(0,
             actions.size() - 1)(*getRandomGenerator())];
-    return getMovedPos(opponentPos, action).first;
+    return getMovedPos(opponentPos, timestep, action).first;
 }
 
-std::pair<GridPosition, bool> TagModel::getMovedPos(GridPosition const &position,
+std::pair<GridPosition, bool> TagModel::getMovedPos(GridPosition const &position,long timestep,
         ActionType action) {
     GridPosition movedPos = position;
     switch (action) {
@@ -331,16 +346,18 @@ std::pair<GridPosition, bool> TagModel::getMovedPos(GridPosition const &position
         debug::show_message(message.str());
         break;
     }
-    bool wasValid = isValid(movedPos);
+    bool wasValid = isValid(movedPos,timestep+1);
     if (!wasValid) {
         movedPos = position;
     }
     return std::make_pair(movedPos, wasValid);
 }
 
-bool TagModel::isValid(GridPosition const &position) {
+bool TagModel::isValid(GridPosition const &position, long const &timeStep) {
+    if(timeStep >= maxTime_)
+        return isValid(position,maxTime_-1);
     return (position.i >= 0 && position.i < nRows_ && position.j >= 0
-            && position.j < nCols_ && envMap_[position.i][position.j] != TagCellType::WALL);
+            && position.j < nCols_ && timeStep>= 0 && timeStep < maxTime_ && envMap_[position.i][position.j][timeStep] != TagCellType::WALL);
 }
 
 std::unique_ptr<solver::Observation> TagModel::makeObservation(TagState const &nextState) {
@@ -431,7 +448,9 @@ void TagModel::applyChanges(std::vector<std::unique_ptr<solver::ModelChange>> co
 
         for (long i = tagChange.i0; i <= tagChange.i1; i++) {
             for (long j = tagChange.j0; j <= tagChange.j1; j++) {
-                envMap_[i][j] = newCellType;
+                for( long t = 0 ; t < maxTime_ ; t++) {
+                    envMap_[i][j][t] = newCellType;
+                }
             }
         }
 
@@ -517,28 +536,29 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
 
     GridPosition newRobotPos(observation.getPosition());
     if (observation.seesOpponent()) {
+        long timestep = static_cast<TagState const *>(previousParticles.front())->getTimestep();
         // If we saw the opponent, we must be in the same place.
         newParticles.push_back(
                 std::make_unique<TagState>(newRobotPos, newRobotPos,
-                        actionType == ActionType::TAG));
+                        actionType == ActionType::TAG,timestep));
     } else {
         // We didn't see the opponent, so we must be in different places.
         for (solver::State const *state : previousParticles) {
             TagState const *tagState = static_cast<TagState const *>(state);
             GridPosition oldRobotPos(tagState->getRobotPosition());
             // Ignore states that do not match knowledge of the robot's position.
-            if (newRobotPos != getMovedPos(oldRobotPos, actionType).first) {
+            if (newRobotPos != getMovedPos(oldRobotPos, tagState->getTimestep(),actionType).first) {
                 continue;
             }
 
             // Get the probability distribution for opponent moves.
             GridPosition oldOpponentPos(tagState->getOpponentPosition());
             std::unordered_map<GridPosition, double> opponentPosDistribution = (
-                    getNextOpponentPositionDistribution(oldRobotPos, oldOpponentPos));
+                    getNextOpponentPositionDistribution(oldRobotPos, oldOpponentPos,tagState->getTimestep()));
 
             for (auto const &entry : opponentPosDistribution) {
                 if (entry.first != newRobotPos) {
-                    TagState newState(newRobotPos, entry.first, false);
+                    TagState newState(newRobotPos, entry.first, false, tagState->getTimestep()+1);
                     weights[newState] += entry.second;
                     weightTotal += entry.second;
                 }
@@ -606,9 +626,9 @@ void TagModel::dispCell(TagCellType cellType, std::ostream &os) {
 }
 
 void TagModel::drawEnv(std::ostream &os) {
-    for (std::vector<TagCellType> &row : envMap_) {
-        for (TagCellType cellType : row) {
-            dispCell(cellType, os);
+    for (auto &row : envMap_) {
+        for (auto cellType : row) {
+            dispCell(cellType[0], os);
             os << " ";
         }
         os << endl;
@@ -659,7 +679,7 @@ void TagModel::drawSimulationState(solver::BeliefNode const *belief,
             } else if (hasOpponent) {
                 os << "o";
             } else {
-                if (envMap_[i][j] == TagCellType::WALL) {
+                if (envMap_[i][j][currentTime_] == TagCellType::WALL) {
                     os << "X";
                 } else {
                     os << ".";
