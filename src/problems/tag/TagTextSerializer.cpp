@@ -80,7 +80,7 @@ void TagTextSerializer::saveState(solver::State const *state, std::ostream &os) 
     TagState const &tagState = static_cast<TagState const &>(*state);
     os << tagState.robotPos_.i << " " << tagState.robotPos_.j << " "
        << tagState.opponentPos_.i << " " << tagState.opponentPos_.j << " "
-       << (tagState.isTagged_ ? "T" : "_") << tagState.getTimestep();
+       << (tagState.isTagged_ ? "T" : "_") <<  " " <<std::setw(6) << tagState.getTimestep();
 }
 
 std::unique_ptr<solver::State> TagTextSerializer::loadState(std::istream &is) {
@@ -94,7 +94,7 @@ std::unique_ptr<solver::State> TagTextSerializer::loadState(std::istream &is) {
     long timestep;
     is >> timestep;
     bool isTagged = (taggedString == "T");
-    return std::make_unique<TagState>(robotPos, opponentPos, timestep,isTagged);
+    return std::make_unique<TagState>(robotPos, opponentPos,isTagged, timestep);
 }
 
 

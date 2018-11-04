@@ -247,7 +247,7 @@ std::pair<std::unique_ptr<TagState>, bool> TagModel::makeNextState(
     if (tagState.isTagged()) {
         return std::make_pair(std::make_unique<TagState>(tagState), false);
     }
-
+    this->currentTime_ = tagState.getTimestep();
     TagAction const &tagAction = static_cast<TagAction const &>(action);
 
     GridPosition robotPos = tagState.getRobotPosition();
