@@ -35,20 +35,31 @@ class StatePool;
 } /* namespace solver */
 
 
-template<size_t dimcount, typename T>
-struct ndvector
-{
-    typedef std::vector< typename ndvector<dimcount-1, T>::type > type;
+
+
+
+
+template <int n,typename T>
+struct ndvector {
+    typedef std::vector<typename ndvector< n - 1, T>::type> type;
 };
 
-template<typename T>
-struct ndvector<0,T>
-{
+template <typename T>
+struct ndvector<0,T> {
     typedef T type;
 };
 
+template <typename T>
+std::vector<T> make_vector(long size) {
+    return std::vector<T>(size);
+}
 
 
+template <typename T, typename... Args>
+typename ndvector< sizeof...(Args) + 1,T>::type make_vector(long first, Args... sizes) {
+    typedef typename ndvector< sizeof...(Args) + 1,T>::type Result;
+    return Result(first, make_vector<T>(sizes...));
+}
 
 /** A namespace to hold the various classes used for the Tag POMDP model. */
 namespace tag {

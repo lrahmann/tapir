@@ -70,8 +70,11 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
             mapText_(), // will be pushed to
             envMap_(), // will be pushed to
             nActions_(5),
+            maxTime_(10),
+            currentTime_(0),
             mdpSolver_(nullptr),
-            pairwiseDistances_() {
+            pairwiseDistances_()
+            {
     options_->numberOfStateVariables = 5;
     options_->minVal = -failedTagPenalty_ / (1 - options_->discountFactor);
     options_->maxVal = tagReward_;
@@ -114,7 +117,7 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
 }
 
 int TagModel::getMapDistance(GridPosition p1, GridPosition p2,long t1 = 0 , long t2 = 0) {
-    return pairwiseDistances_[p1.i][p1.j][p2.i][p2.j][t1][t2];
+    return pairwiseDistances_[p1.i][p1.j][t1][p2.i][p2.j][t2];
 }
 
 void TagModel::calculateDistancesFrom(GridPosition position,long timestep = 0) {
@@ -174,7 +177,9 @@ void TagModel::calculatePairwiseDistances() {
 
 void TagModel::initialize() {
     GridPosition p;
-    envMap_.resize(nRows_);
+    //build massive array
+    envMap_ = make_vector<TagCellType >(nRows_,nCols_,0);
+
     for (p.i = nRows_ - 1; p.i >= 0; p.i--) {
         envMap_[p.i].resize(nCols_);
         for (p.j = 0; p.j < nCols_; p.j++) {
@@ -189,16 +194,7 @@ void TagModel::initialize() {
         }
     }
 
-    pairwiseDistances_.resize(nRows_);
-    for (auto &rowOfGrids : pairwiseDistances_) {
-        rowOfGrids.resize(nCols_);
-        for (auto &grid : rowOfGrids) {
-            grid.resize(nRows_);
-            for (auto &row : grid) {
-                row.resize(nCols_);
-            }
-        }
-    }
+    pairwiseDistances_ = make_vector<int>(nRows_,nCols_,maxTime_,nRows_,nCols_,maxTime_);
 
     calculatePairwiseDistances();
 }
@@ -581,7 +577,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
     return newParticles;
 }
 
-std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
+    std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
         solver::BeliefNode */*previousBelief*/, solver::Action const &action,
         solver::Observation const &obs, long nParticles) {
     std::vector<std::unique_ptr<solver::State>> newParticles;
@@ -595,7 +591,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
         while ((long)newParticles.size() < nParticles) {
             newParticles.push_back(
                 std::make_unique<TagState>(newRobotPos, newRobotPos,
-                        actionType == ActionType::TAG));
+                        actionType == ActionType::TAG,currentTime_));
         }
     } else {
         while ((long)newParticles.size() < nParticles) {
