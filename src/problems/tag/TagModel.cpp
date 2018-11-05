@@ -70,8 +70,7 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
             mapText_(), // will be pushed to
             envMap_(), // will be pushed to
             nActions_(5),
-            maxTime_(10),
-            currentTime_(0),
+            maxTime_(100),
             mdpSolver_(nullptr),
             pairwiseDistances_()
             {
@@ -132,7 +131,7 @@ void TagModel::calculateDistancesFrom(GridPosition position,long timestep = 0) {
             }
         }
     }
-    if (envMap_[position.i][position.j][timestep] == TagCellType::WALL) {
+    if (envMap_[timestep][position.i][position.j] == TagCellType::WALL) {
         return;
     }
 
@@ -178,7 +177,7 @@ void TagModel::calculatePairwiseDistances() {
 void TagModel::initialize() {
     GridPosition p;
     //build massive array
-    envMap_ = make_vector<TagCellType >(nRows_,nCols_,0);
+    envMap_ = make_vector<TagCellType >(maxTime_,nRows_,nCols_);
 
     for (p.i = nRows_ - 1; p.i >= 0; p.i--) {
         envMap_[p.i].resize(nCols_);
@@ -190,7 +189,9 @@ void TagModel::initialize() {
             } else {
                 cellType = TagCellType::EMPTY;
             }
-            envMap_[p.i][p.j].resize(maxTime_,cellType);
+            for(int t=0;t<maxTime_;t++){
+                envMap_[t][p.i][p.j] = cellType;
+            }
         }
     }
 
@@ -209,7 +210,7 @@ std::tuple<GridPosition,int> TagModel::randomEmptyCell(long timeStep) {
         if (timeStep == -1) {
             timeStep = std::uniform_int_distribution<long>(0, maxTime_ - 1)(*getRandomGenerator());
         }
-        if (envMap_[pos.i][pos.j][timeStep] == TagCellType::EMPTY) {
+        if (envMap_[timeStep][pos.i][pos.j] == TagCellType::EMPTY) {
             break;
         }
     }
@@ -219,7 +220,11 @@ std::tuple<GridPosition,int> TagModel::randomEmptyCell(long timeStep) {
 
 /* --------------- The model interface proper ----------------- */
 std::unique_ptr<solver::State> TagModel::sampleAnInitState() {
-    return sampleStateUninformed();
+    GridPosition robotPos;
+    long timestep = 0;
+    std::tie(robotPos,timestep)= randomEmptyCell(timestep);
+    GridPosition opponentPos = std::get<0>(randomEmptyCell(timestep));
+    return std::make_unique<TagState>(robotPos, opponentPos, false, timestep);
 }
 
 std::unique_ptr<solver::State> TagModel::sampleStateUninformed() {
@@ -247,7 +252,6 @@ std::pair<std::unique_ptr<TagState>, bool> TagModel::makeNextState(
     if (tagState.isTagged()) {
         return std::make_pair(std::make_unique<TagState>(tagState), false);
     }
-    this->currentTime_ = tagState.getTimestep();
     TagAction const &tagAction = static_cast<TagAction const &>(action);
 
     GridPosition robotPos = tagState.getRobotPosition();
@@ -353,11 +357,11 @@ bool TagModel::isValid(GridPosition const &position, long const &timeStep) {
     if(timeStep >= maxTime_)
         return isValid(position,maxTime_-1);
     return (position.i >= 0 && position.i < nRows_ && position.j >= 0
-            && position.j < nCols_ && timeStep>= 0 && timeStep < maxTime_ && envMap_[position.i][position.j][timeStep] != TagCellType::WALL);
+            && position.j < nCols_ && timeStep>= 0 && timeStep < maxTime_ && envMap_[timeStep][position.i][position.j] != TagCellType::WALL);
 }
 
 std::unique_ptr<solver::Observation> TagModel::makeObservation(TagState const &nextState) {
-    return std::make_unique<TagObservation>(nextState.getRobotPosition(),
+    return std::make_unique<TagObservation>(nextState.getRobotPosition(),nextState.getTimestep(),
             nextState.getRobotPosition() == nextState.getOpponentPosition());
 }
 
@@ -445,7 +449,7 @@ void TagModel::applyChanges(std::vector<std::unique_ptr<solver::ModelChange>> co
         for (long i = tagChange.i0; i <= tagChange.i1; i++) {
             for (long j = tagChange.j0; j <= tagChange.j1; j++) {
                 for( long t = 0 ; t < maxTime_ ; t++) {
-                    envMap_[i][j][t] = newCellType;
+                    envMap_[t][i][j] = newCellType;
                 }
             }
         }
@@ -578,7 +582,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
 }
 
     std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
-        solver::BeliefNode */*previousBelief*/, solver::Action const &action,
+        solver::BeliefNode *previousBelief, solver::Action const &action,
         solver::Observation const &obs, long nParticles) {
     std::vector<std::unique_ptr<solver::State>> newParticles;
     TagObservation const &observation =
@@ -591,7 +595,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
         while ((long)newParticles.size() < nParticles) {
             newParticles.push_back(
                 std::make_unique<TagState>(newRobotPos, newRobotPos,
-                        actionType == ActionType::TAG,currentTime_));
+                        actionType == ActionType::TAG,this->getCurrentTimestep(previousBelief)));
         }
     } else {
         while ((long)newParticles.size() < nParticles) {
@@ -622,18 +626,26 @@ void TagModel::dispCell(TagCellType cellType, std::ostream &os) {
 }
 
 void TagModel::drawEnv(std::ostream &os) {
-    for (auto &row : envMap_) {
-        for (auto cellType : row) {
-            dispCell(cellType[0], os);
-            os << " ";
-        }
-        os << endl;
+    drawEnv(os,0);
+}
+void TagModel::drawEnv(std::ostream &os,long timeStep) {
+        for (auto &row : envMap_[timeStep]) {
+            for (auto cellType : row) {
+                dispCell(cellType, os);
+                os << " ";
+            }
+            os << endl;
     }
 }
 
 void TagModel::drawSimulationState(solver::BeliefNode const *belief,
         solver::State const &state, std::ostream &os) {
+
+
     TagState const &tagState = static_cast<TagState const &>(state);
+    long currentTime = tagState.getTimestep();
+    os << "Current Time: " << currentTime << std::endl;
+    os << "Current Time belief: " << getCurrentTimestep(belief) << std::endl;
     std::vector<solver::State const *> particles = belief->getStates();
     std::vector<std::vector<long>> particleCounts(nRows_,
             std::vector<long>(nCols_));
@@ -653,8 +665,8 @@ void TagModel::drawSimulationState(solver::BeliefNode const *belief,
         }
         os << endl;
     }
-    for (std::size_t i = 0; i < envMap_.size(); i++) {
-        for (std::size_t j = 0; j < envMap_[0].size(); j++) {
+    for (std::size_t i = 0; i < nRows_; i++) {
+        for (std::size_t j = 0; j < nCols_; j++) {
             double proportion = (double) particleCounts[i][j]
                     / particles.size();
             if (options_->hasColorOutput) {
@@ -675,7 +687,7 @@ void TagModel::drawSimulationState(solver::BeliefNode const *belief,
             } else if (hasOpponent) {
                 os << "o";
             } else {
-                if (envMap_[i][j][currentTime_] == TagCellType::WALL) {
+                if (envMap_[currentTime][i][j] == TagCellType::WALL) {
                     os << "X";
                 } else {
                     os << ".";
@@ -740,9 +752,9 @@ std::vector<std::vector<float>> TagModel::getBeliefProportions(solver::BeliefNod
     }
 
     std::vector<std::vector<float>> result;
-    for (std::size_t i = 0; i < envMap_.size(); i++) {
+    for (std::size_t i = 0; i < nRows_; i++) {
         result.push_back(std::vector<float>());
-        for (std::size_t j = 0; j < envMap_[0].size(); j++) {
+        for (std::size_t j = 0; j < nCols_; j++) {
             result[i].push_back((float) particleCounts[i][j]/particles.size());
         }
     }
@@ -755,4 +767,10 @@ std::unique_ptr<solver::ActionPool> TagModel::createActionPool(solver::Solver */
 std::unique_ptr<solver::Serializer> TagModel::createSerializer(solver::Solver *solver) {
     return std::make_unique<TagTextSerializer>(solver);
 }
+
+long TagModel::getCurrentTimestep(const solver::BeliefNode* belief) {
+    return static_cast<const TagState *>(belief->getStates()[0])->getTimestep();
+}
+
+
 } /* namespace tag */

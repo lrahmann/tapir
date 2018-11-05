@@ -72,7 +72,9 @@ void TagNode::initialise() {
 
 void TagNode::timerCallback(const ros::TimerEvent& e) {
 
-	// Don't do anything if VREP is paused
+    solver::BeliefNode *currentBelief = agent_->getCurrentBelief();
+    long timeStep = (static_cast<const TagState *>(currentBelief->getStates()[0]))->getTimestep();
+    // Don't do anything if VREP is paused
 	if (!vrepHelper_.isRunning()) {
 		std::cout << "Waiting for VREP" << std::endl;
 		return;
@@ -91,7 +93,7 @@ void TagNode::timerCallback(const ros::TimerEvent& e) {
 	Point p(transform.getOrigin().x(), transform.getOrigin().y());
 	GridPosition g = pointToGrid(p);
 	GridPosition g2 = solverModel_->sampleNextOpponentPosition(
-			lastObservation_->getPosition(), g);
+			lastObservation_->getPosition(), g, timeStep);
 	Point p2 = gridToPoint(g2);
 
 	// Stop once terminal state reached (human is tagged)
@@ -108,10 +110,9 @@ void TagNode::timerCallback(const ros::TimerEvent& e) {
 	processTapir();
 
 	// Publish environment map as string
-	publishEnvMap(solverModel_->getEnvMap());
+	publishEnvMap(solverModel_->getEnvMap(timeStep));
 
 	// Publish belief about target position on ROS
-	solver::BeliefNode *currentBelief = agent_->getCurrentBelief();
 	publishBelief(solverModel_->getBeliefProportions(currentBelief));
 }
 
@@ -127,8 +128,8 @@ std::unique_ptr<TagObservation> TagNode::getObservation() {
 
 void TagNode::applyAction(const TagAction& action) {
 	const GridPosition& oldPos = lastObservation_->getPosition();
-	std::pair<GridPosition, bool> temp = solverModel_->getMovedPos(
-			oldPos, action.getActionType());
+    std::pair<GridPosition, bool> temp = solverModel_->getMovedPos(
+			oldPos,lastObservation_->getTimestep(), action.getActionType());
 	Point robotPos = gridToPoint(temp.first);
 	publishRobotGoal(robotPos.x, robotPos.y);
 }

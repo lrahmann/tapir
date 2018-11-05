@@ -19,10 +19,11 @@
 #include "TagModel.hpp"
 
 namespace tag {
-TagObservation::TagObservation(GridPosition position,
-            bool _seesOpponent) :
+
+TagObservation::TagObservation(GridPosition position,long timestep,   bool _seesOpponent) :
                     position_(position),
-                    seesOpponent_(_seesOpponent) {
+                    seesOpponent_(_seesOpponent),
+                    timestep_(timestep){
 }
 std::unique_ptr<solver::Observation>
 TagObservation::copy() const {
@@ -67,5 +68,11 @@ GridPosition TagObservation::getPosition() const {
 bool TagObservation::seesOpponent() const {
     return seesOpponent_;
 }
+
+long TagObservation::getTimestep() const {
+    return timestep_;
+}
+
+
 }
 /* namespace tag */

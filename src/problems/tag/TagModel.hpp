@@ -139,6 +139,9 @@ class TagModel: public shared::ModelWithProgramOptions {
         return envMap_;
     }
 
+    inline const ndvector<2,TagCellType>::type & getEnvMap(long timestep){
+        return envMap_[timestep];
+    };
     /**
      * Returns proportion of belief particles about the target's
      * position for each grid position in the map
@@ -252,6 +255,7 @@ class TagModel: public shared::ModelWithProgramOptions {
     /** Prints a single cell of the map out to the given output stream. */
     virtual void dispCell(TagCellType cellType, std::ostream &os);
     virtual void drawEnv(std::ostream &os) override;
+    void drawEnv(std::ostream &os, long timestep);
     virtual void drawSimulationState(solver::BeliefNode const *belief,
             solver::State const &state,
             std::ostream &os) override;
@@ -279,7 +283,9 @@ class TagModel: public shared::ModelWithProgramOptions {
 
     virtual std::unique_ptr<solver::Serializer> createSerializer(solver::Solver *solver) override;
 
-  private:
+    long getCurrentTimestep(const solver::BeliefNode* belief);
+
+private:
     /** Calculates the distances from the given position to all other parts of the map. */
     void calculateDistancesFrom(GridPosition position, long timestep);
     /** Calculates all pairwise distances on the map. */
@@ -345,7 +351,6 @@ class TagModel: public shared::ModelWithProgramOptions {
 
     long maxTime_;
 
-    long currentTime_;
     /** The environment map in text form. */
     std::vector<std::string> mapText_;
     /** The environment map in vector form. */

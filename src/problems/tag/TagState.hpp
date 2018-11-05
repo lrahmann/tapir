@@ -60,7 +60,7 @@ class TagState : public solver::VectorState {
     /** Returns true iff the opponent has already been tagged. */
     bool isTagged() const;
   private:
-    int timestep_;
+    long timestep_;
     /** The position of the robot in the grid. */
     GridPosition robotPos_;
     /** The position of the opponent in the grid. */
