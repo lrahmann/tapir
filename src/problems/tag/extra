@@ -1,0 +1,5 @@
+if (p.i == dynamic_obj[t][0] && p.j == dynamic_obj[t][2]){
+                    cellType = TagCellType:: WALL;
+                    cout << "Dynamic:" << dynamic_obj[t][0] << dynamic_obj[t][2]<< endl;
+
+                }

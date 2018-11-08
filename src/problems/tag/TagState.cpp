@@ -9,7 +9,7 @@
 #include <functional>   // for hash
 #include <ostream>                      // for operator<<, ostream, basic_ostream>
 #include <vector>
-
+#include <string>
 #include "global.hpp"
 #include "problems/shared/GridPosition.hpp"  // for GridPosition, operator==, operator<<
 #include "solver/abstract-problem/State.hpp"             // for State

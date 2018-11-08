@@ -15,6 +15,8 @@
 #include <random>                       // for uniform_int_distribution, bernoulli_distribution
 #include <unordered_map>                // for _Node_iterator, operator!=, unordered_map<>::iterator, _Node_iterator_base, unordered_map
 #include <utility>                      // for make_pair, move, pair
+#include <typeinfo>
+#include <sstream>
 
 #include "global.hpp"                     // for RandomGenerator, make_unique
 #include "problems/shared/GridPosition.hpp"  // for GridPosition, operator==, operator!=, operator<<
@@ -68,6 +70,7 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
             nRows_(0), // to be updated
             nCols_(0), // to be updated
             mapText_(), // will be pushed to
+            dynamic_obj(),
             envMap_(), // will be pushed to
             nActions_(5),
             maxTime_(100),
@@ -99,6 +102,17 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
         getline(inFile, tmp);
         mapText_.push_back(tmp);
     }
+
+
+    inFile >> maxTime_;
+    getline(inFile, tmp);
+    for (long i = 0; i < maxTime_; i++) {
+        getline(inFile, tmp);
+        dynamic_obj.push_back(tmp);
+    }
+
+    // cout << "dynamic object" << dynamic_obj << endl;
+
     inFile.close();
 
     initialize();
@@ -107,6 +121,7 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
         cout << "Discount: " << options_->discountFactor << endl;
         cout << "Size: " << nRows_ << " by " << nCols_ << endl;
         cout << "move cost: " << moveCost_ << endl;
+        cout << "maximumtime: " << maxTime_ << endl;
         cout << "nActions: " << nActions_ << endl;
         cout << "nStVars: " << options_->numberOfStateVariables << endl;
         cout << "minParticleCount: " << options_->minParticleCount << endl;
@@ -177,10 +192,11 @@ void TagModel::calculatePairwiseDistances() {
 void TagModel::initialize() {
     GridPosition p;
     //build massive array
+
+
     envMap_ = make_vector<TagCellType >(maxTime_,nRows_,nCols_);
 
     for (p.i = nRows_ - 1; p.i >= 0; p.i--) {
-        envMap_[p.i].resize(nCols_);
         for (p.j = 0; p.j < nCols_; p.j++) {
             char c = mapText_[p.i][p.j];
             TagCellType cellType;
@@ -190,10 +206,49 @@ void TagModel::initialize() {
                 cellType = TagCellType::EMPTY;
             }
             for(int t=0;t<maxTime_;t++){
+
+                // int value = (int)dynamic_obj[t][0];
+
+                int x,y;
+                int count = 0;
+
+                std::stringstream stream(dynamic_obj[t]);
+                
+                while(1) {
+                    int n;
+                    if (count == 0){
+                        stream >> x;
+                        count = count +1;
+                    }
+                    else if (count == 1){
+                        stream >> y;
+                        count = count +1;
+                    }
+                    else
+                        stream >>n;
+
+                    if(!stream)
+                        break;
+
+                    // std::cout << "Found integer: " << x << " " << y<< "\n";
+                }
+
+
+                cout << p.i << " " << (int)x<< " " << (p.i == (int)x )<< endl;
+                // cout << (int)p.i << " " << (int)x<< " "<< (int)p.j << " " << (int)y << endl;
+                
+                if (p.i == (int)x && p.j == (int)y){
+                    cout << (int)p.i << " " << (int)x<< " "<< (int)p.j << " " << (int)y << endl;
+                    cellType = TagCellType:: WALL;
+                    // cout << "Dynamic:" << x << y<< endl;
+
+                }
                 envMap_[t][p.i][p.j] = cellType;
             }
         }
     }
+
+
 
     pairwiseDistances_ = make_vector<int>(nRows_,nCols_,maxTime_,nRows_,nCols_,maxTime_);
 

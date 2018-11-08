@@ -352,6 +352,9 @@ private:
     long maxTime_;
 
     /** The environment map in text form. */
+    std::vector<std::string> dynamic_obj;
+
+    /** The environment map in text form. */
     std::vector<std::string> mapText_;
     /** The environment map in vector form. */
     /** last index is time*/
