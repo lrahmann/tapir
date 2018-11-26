@@ -208,7 +208,7 @@ void TagNode::publishEnvMap(std::vector<std::vector<TagModel::TagCellType>> cons
             Point p = gridToPoint(GridPosition(i, j));
             ss << (float) p.x << ",";
             ss << (float) p.y << ",";
-            ss << (float) envMap[i][j] << " ";
+                ss << (float) envMap[i][j] << " ";
         }
     }
     std_msgs::String stringMsg;

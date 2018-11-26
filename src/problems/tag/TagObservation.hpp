@@ -30,7 +30,7 @@ class TagObservation : public solver::Point {
     /** Constructs a new TagObservation for the given robot position; seesOpponent should be true
      * iff the robot sees the opponent due to being on the same square.
      */
-    TagObservation(GridPosition myPosition, long timestep, bool seesOpponent = false);
+    TagObservation(GridPosition myPosition, long timestep, double opponentDistance = INFINITY);
 
     virtual ~TagObservation() = default;
     _NO_COPY_OR_MOVE(TagObservation);
@@ -44,14 +44,14 @@ class TagObservation : public solver::Point {
     /** Returns the position the robot has observed itself in. */
     GridPosition getPosition() const;
     /** Returns true iff the robot sees the opponent in the same square it is in. */
-    bool seesOpponent() const;
+    bool atOpponentPosition() const;
     long getTimestep() const;
   private:
     long timestep_;
     /** The position the robot sees itself in. */
     GridPosition position_;
     /** True iff the robot sees the opponent in the same square it is in. */
-    bool seesOpponent_;
+    double opponentDistance_;
 };
 } /* namespace tag */
 #endif /* TAG_OBSERVATION_HPP_ */

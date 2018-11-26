@@ -106,7 +106,7 @@ void TagTextSerializer::saveObservation(solver::Observation const *obs,
         TagObservation const &observation = static_cast<TagObservation const &>(
                 *obs);
         os << "(" << observation.position_.i << " " << observation.position_.j;
-        os << " " << (observation.seesOpponent_ ? "SEEN" : "UNSEEN") << ")";
+        os << " " << (observation.opponentDistance_) << ")";
     }
 }
 
@@ -120,9 +120,9 @@ std::unique_ptr<solver::Observation> TagTextSerializer::loadObservation(
     }
     long i, j;
     std::string tmpStr;
-    std::istringstream(obsString) >> i >> j >> tmpStr;
-    bool seesOpponent = tmpStr == "SEEN";
-    return std::make_unique<TagObservation>(GridPosition(i, j), seesOpponent);
+    double distance;
+    std::istringstream(obsString) >> i >> j >> distance;
+    return std::make_unique<TagObservation>(GridPosition(i, j), distance);
 }
 
 

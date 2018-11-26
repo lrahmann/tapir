@@ -131,47 +131,44 @@ TagModel::TagModel(RandomGenerator *randGen, std::unique_ptr<TagOptions> options
 }
 
 int TagModel::getMapDistance(GridPosition p1, GridPosition p2,long t1 = 0 , long t2 = 0) {
-    return pairwiseDistances_[p1.i][p1.j][t1][p2.i][p2.j][t2];
+    return pairwiseDistances_[p1.i][p1.j][p2.i][p2.j];
 }
 
 void TagModel::calculateDistancesFrom(GridPosition position,long timestep = 0) {
 
-    auto &distanceGrid = pairwiseDistances_[position.i][position.j][timestep];
+    auto &distanceGrid = pairwiseDistances_[position.i][position.j];
 
     // Fill the grid with "-1", for inaccessible cells.
     for (auto &row : distanceGrid) {
         for (auto &cell : row) {
-            for(auto &cellV : cell){
-                cellV = -1;
-            }
+                cell = -1;
+
         }
     }
-    if (envMap_[timestep][position.i][position.j] == TagCellType::WALL) {
+    if (envMap_[0][position.i][position.j] == TagCellType::WALL) {
         return;
     }
 
-    std::queue<std::tuple<GridPosition,long>> queue;
+    std::queue<GridPosition> queue;
     // Start at 0 for the current position.
-    distanceGrid[position.i][position.j][timestep] = 0;
-    queue.push(std::tie(position,timestep));
+    distanceGrid[position.i][position.j] = 0;
+    queue.push(position);
     while (!queue.empty()) {
         GridPosition pos;
-        long timeStep;
-        std::tie(pos,timeStep) = queue.front();
+        pos = queue.front();
         queue.pop();
-        int distance = distanceGrid[pos.i][pos.j][timeStep] + 1;
+        int distance = distanceGrid[pos.i][pos.j] + 1;
         for (ActionType direction : { ActionType::NORTH, ActionType::SOUTH, ActionType::WEST,
                 ActionType::EAST }) {
             GridPosition nextPos;
             bool isLegal;
-            std::tie(nextPos, isLegal) = getMovedPos(pos,timeStep, direction);
-            timeStep++;
+            std::tie(nextPos, isLegal) = getMovedPos(pos,0, direction);
             // If it's legal and it's an improvement it needs to be queued.
-            if (isLegal && timeStep < maxTime_) {
-                int &nextPosDistance = distanceGrid[nextPos.i][nextPos.j][timeStep];
+            if (isLegal) {
+                int &nextPosDistance = distanceGrid[nextPos.i][nextPos.j];
                 if (nextPosDistance == -1 || nextPosDistance > distance) {
                     nextPosDistance = distance;
-                    queue.push(std::tie(nextPos,timeStep));
+                    queue.push(nextPos);
                 }
             }
         }
@@ -205,52 +202,39 @@ void TagModel::initialize() {
             } else {
                 cellType = TagCellType::EMPTY;
             }
+
+
             for(int t=0;t<maxTime_;t++){
-
-                // int value = (int)dynamic_obj[t][0];
-
-                int x,y;
-                int count = 0;
-
-                std::stringstream stream(dynamic_obj[t]);
-                
-                while(1) {
-                    int n;
-                    if (count == 0){
-                        stream >> x;
-                        count = count +1;
-                    }
-                    else if (count == 1){
-                        stream >> y;
-                        count = count +1;
-                    }
-                    else
-                        stream >>n;
-
-                    if(!stream)
-                        break;
-
-                    // std::cout << "Found integer: " << x << " " << y<< "\n";
-                }
-
-
-                cout << p.i << " " << (int)x<< " " << (p.i == (int)x )<< endl;
-                // cout << (int)p.i << " " << (int)x<< " "<< (int)p.j << " " << (int)y << endl;
-                
-                if (p.i == (int)x && p.j == (int)y){
-                    cout << (int)p.i << " " << (int)x<< " "<< (int)p.j << " " << (int)y << endl;
-                    cellType = TagCellType:: WALL;
-                    // cout << "Dynamic:" << x << y<< endl;
-
-                }
                 envMap_[t][p.i][p.j] = cellType;
             }
         }
     }
 
+    int maxTime = -1;
+    int lastX;
+    int lastY;
+    for (auto line : dynamic_obj){
+        std::stringstream stream(line);
+        int x ,y,time;
+        stream >> x >> y >> time;
+        //cout << x << " " << y << " " << time << endl;
+        envMap_[time][x][y] = TagCellType:: WALL;
+        if(time > maxTime){
+            lastX =x;
+            lastY =y;
+            maxTime=time;
+
+        }
+    }
+
+    if(maxTime>=0) {
+        for (int i = maxTime + 1; i < maxTime_; i++) {
+            envMap_[i][lastX][lastY] = TagCellType::WALL;
+        }
+    }
 
 
-    pairwiseDistances_ = make_vector<int>(nRows_,nCols_,maxTime_,nRows_,nCols_,maxTime_);
+    pairwiseDistances_ = make_vector<int>(nRows_,nCols_,nRows_,nCols_);
 
     calculatePairwiseDistances();
 }
@@ -284,14 +268,15 @@ std::unique_ptr<solver::State> TagModel::sampleAnInitState() {
 
 std::unique_ptr<solver::State> TagModel::sampleStateUninformed() {
     GridPosition robotPos;
-    long timestep;
-    std::tie(robotPos,timestep)= randomEmptyCell();
+    long timestep = -1;
+    std::tie(robotPos,timestep)= randomEmptyCell(timestep);
     GridPosition opponentPos = std::get<0>(randomEmptyCell(timestep));
     return std::make_unique<TagState>(robotPos, opponentPos, false, timestep);
 }
 
 bool TagModel::isTerminal(solver::State const &state) {
-    return static_cast<TagState const &>(state).isTagged();
+    auto tagState = static_cast<TagState const &>(state);
+    return tagState.isTagged() || tagState.getTimestep()>=maxTime_-1;
 }
 
 bool TagModel::isValid(solver::State const &state) {
@@ -309,19 +294,21 @@ std::pair<std::unique_ptr<TagState>, bool> TagModel::makeNextState(
     }
     TagAction const &tagAction = static_cast<TagAction const &>(action);
 
+    long nexTimeStep = std::min((long)tagState.getTimestep()+1,maxTime_);
+
     GridPosition robotPos = tagState.getRobotPosition();
     GridPosition opponentPos = tagState.getOpponentPosition();
     if (tagAction.getActionType() == ActionType::TAG
             && robotPos == opponentPos) {
         return std::make_pair(
-                std::make_unique<TagState>(robotPos, opponentPos, true,tagState.getTimestep()+1), true);
+                std::make_unique<TagState>(robotPos, opponentPos, true,nexTimeStep), true);
     }
 
     GridPosition newOpponentPos = sampleNextOpponentPosition(robotPos, opponentPos,tagState.getTimestep());
     GridPosition newRobotPos;
     bool wasValid;
     std::tie(newRobotPos, wasValid) = getMovedPos(robotPos, tagState.getTimestep(),tagAction.getActionType());
-    return std::make_pair(std::make_unique<TagState>(newRobotPos, newOpponentPos, false,tagState.getTimestep()+1),
+    return std::make_pair(std::make_unique<TagState>(newRobotPos, newOpponentPos, false,nexTimeStep),
             wasValid);
 }
 
@@ -415,24 +402,56 @@ bool TagModel::isValid(GridPosition const &position, long const &timeStep) {
             && position.j < nCols_ && timeStep>= 0 && timeStep < maxTime_ && envMap_[timeStep][position.i][position.j] != TagCellType::WALL);
 }
 
+double TagModel::distanceToOpponent(TagState const &state){
+    double stepI =  state.getOpponentPosition().i - state.getRobotPosition().i ;
+    double stepJ =  state.getOpponentPosition().j - state.getRobotPosition().j ;
+    double norm = sqrt(stepI*stepI + stepJ*stepJ);
+    if(norm == 0){
+        return true;
+    }
+    if(norm > 3){
+        return -1;
+    }
+    stepJ /= norm;
+    stepI/= norm;
+    for(int i=1;i<norm;i++){
+        int x = (int) state.getRobotPosition().i + stepI*i;
+        int y = (int) state.getRobotPosition().j + stepJ*i;
+
+        if(envMap_[state.getTimestep()][x][y] == TagCellType::WALL)
+            return -1;
+    }
+    return norm;
+}
+
+
 std::unique_ptr<solver::Observation> TagModel::makeObservation(TagState const &nextState) {
     return std::make_unique<TagObservation>(nextState.getRobotPosition(),nextState.getTimestep(),
-            nextState.getRobotPosition() == nextState.getOpponentPosition());
+                                            this->distanceToOpponent(nextState)
+    );
 }
 
 double TagModel::generateReward(solver::State const &state,
         solver::Action const &action,
         solver::TransitionParameters const */*tp*/,
-        solver::State const */*nextState*/) {
+        solver::State const *nextState) {
+    TagState const &tagState = static_cast<TagState const &>(state);
+    TagState const &nextTagState = static_cast<TagState const &>(*nextState);
     if (static_cast<TagAction const &>(action).getActionType()
             == ActionType::TAG) {
-        TagState const &tagState = static_cast<TagState const &>(state);
         if (tagState.getRobotPosition() == tagState.getOpponentPosition()) {
             return tagReward_;
         } else {
             return -failedTagPenalty_;
         }
     } else {
+        auto nextDistance = nextTagState.getOpponentPosition().manhattanDistanceTo(nextTagState.getRobotPosition());
+        auto currentDistance = tagState.getOpponentPosition().manhattanDistanceTo(tagState.getRobotPosition());
+
+        if(nextDistance<currentDistance){
+            return -moveCost_/2;
+        }
+
         return -moveCost_;
     }
 }
@@ -457,7 +476,7 @@ solver::Model::StepResult TagModel::generateStep(solver::State const &state,
     std::unique_ptr<TagState> nextState = makeNextState(state, action).first;
 
     result.observation = makeObservation(*nextState);
-    result.reward = generateReward(state, action, nullptr, nullptr);
+    result.reward = generateReward(state, action, nullptr, nextState.get());
     result.isTerminal = isTerminal(*nextState);
     result.nextState = std::move(nextState);
     return result;
@@ -590,7 +609,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
     double weightTotal = 0;
 
     GridPosition newRobotPos(observation.getPosition());
-    if (observation.seesOpponent()) {
+    if (observation.atOpponentPosition()) {
         long timestep = static_cast<TagState const *>(previousParticles.front())->getTimestep();
         // If we saw the opponent, we must be in the same place.
         newParticles.push_back(
@@ -645,7 +664,7 @@ std::vector<std::unique_ptr<solver::State>> TagModel::generateParticles(
     ActionType actionType =
             (static_cast<TagAction const &>(action).getActionType());
     GridPosition newRobotPos(observation.getPosition());
-    if (observation.seesOpponent()) {
+    if (observation.atOpponentPosition()) {
         // If we saw the opponent, we must be in the same place.
         while ((long)newParticles.size() < nParticles) {
             newParticles.push_back(

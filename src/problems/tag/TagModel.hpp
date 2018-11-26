@@ -215,7 +215,7 @@ class TagModel: public shared::ModelWithProgramOptions {
                 solver::State const &state,
                 solver::Action const &action,
                 solver::TransitionParameters const */*tp*/,
-                solver::State const */*nextState*/) override;
+                solver::State const *nextState) override;
     virtual Model::StepResult generateStep(solver::State const &state,
             solver::Action const &action) override;
 
@@ -367,7 +367,9 @@ private:
     std::unique_ptr<TagMdpSolver> mdpSolver_;
 
     /** The pairwise distances between each pair of cells in the map. */
-    ndvector<6,int>::type pairwiseDistances_;
+    ndvector<4,int>::type pairwiseDistances_;
+
+    double distanceToOpponent(const TagState &state);
 };
 } /* namespace tag */
 
